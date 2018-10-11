@@ -10,16 +10,6 @@
 #include "dir.h"
 #include "run-command.h"
 
-struct add_i_state {
-	struct repository *r;
-	int use_color;
-	char header_color[COLOR_MAXLEN];
-	char help_color[COLOR_MAXLEN];
-	char prompt_color[COLOR_MAXLEN];
-	char error_color[COLOR_MAXLEN];
-	char reset_color[COLOR_MAXLEN];
-};
-
 static void init_color(struct repository *r, struct add_i_state *s,
 		       const char *slot_name, char *dst,
 		       const char *default_color)
@@ -36,7 +26,7 @@ static void init_color(struct repository *r, struct add_i_state *s,
 	free(key);
 }
 
-static void init_add_i_state(struct add_i_state *s, struct repository *r)
+void init_add_i_state(struct add_i_state *s, struct repository *r)
 {
 	const char *value;
 
@@ -54,6 +44,32 @@ static void init_add_i_state(struct add_i_state *s, struct repository *r)
 	init_color(r, s, "prompt", s->prompt_color, GIT_COLOR_BOLD_BLUE);
 	init_color(r, s, "error", s->error_color, GIT_COLOR_BOLD_RED);
 	init_color(r, s, "reset", s->reset_color, GIT_COLOR_RESET);
+	init_color(r, s, "fraginfo", s->fraginfo_color,
+		   diff_get_color(s->use_color, DIFF_FRAGINFO));
+	init_color(r, s, "context", s->context_color,
+		diff_get_color(s->use_color, DIFF_CONTEXT));
+	init_color(r, s, "old", s->file_old_color,
+		diff_get_color(s->use_color, DIFF_FILE_OLD));
+	init_color(r, s, "new", s->file_new_color,
+		diff_get_color(s->use_color, DIFF_FILE_NEW));
+
+	FREE_AND_NULL(s->interactive_diff_filter);
+	git_config_get_string("interactive.difffilter",
+			      &s->interactive_diff_filter);
+
+	FREE_AND_NULL(s->interactive_diff_algorithm);
+	git_config_get_string("diff.algorithm",
+			      &s->interactive_diff_algorithm);
+
+	git_config_get_bool("interactive.singlekey", &s->use_single_key);
+}
+
+void clear_add_i_state(struct add_i_state *s)
+{
+	FREE_AND_NULL(s->interactive_diff_filter);
+	FREE_AND_NULL(s->interactive_diff_algorithm);
+	memset(s, 0, sizeof(*s));
+	s->use_color = -1;
 }
 
 /*
@@ -917,15 +933,18 @@ static int run_patch(struct add_i_state *s, const struct pathspec *ps,
 	count = list_and_choose(s, files, opts);
 	if (count >= 0) {
 		struct argv_array args = ARGV_ARRAY_INIT;
+		struct pathspec ps_selected = { 0 };
 
-		argv_array_pushl(&args, "git", "add--interactive", "--patch",
-				 "--", NULL);
 		for (i = 0; i < files->items.nr; i++)
 			if (files->selected[i])
 				argv_array_push(&args,
 						files->items.items[i].string);
-		res = run_command_v_opt(args.argv, 0);
+		parse_pathspec(&ps_selected,
+			       PATHSPEC_ALL_MAGIC & ~PATHSPEC_LITERAL,
+			       PATHSPEC_LITERAL_PATH, "", args.argv);
+		res = run_add_p(s->r, ADD_P_STAGE, NULL, &ps_selected);
 		argv_array_clear(&args);
+		clear_pathspec(&ps_selected);
 	}
 
 	return res;
@@ -1148,6 +1167,7 @@ int run_add_i(struct repository *r, const struct pathspec *ps)
 	strbuf_release(&print_file_item_data.worktree);
 	strbuf_release(&header);
 	prefix_item_list_clear(&commands);
+	clear_add_i_state(&s);
 
 	return res;
 }
