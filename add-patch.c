@@ -415,7 +415,7 @@ static int parse_diff(struct add_p_state *s, const struct pathspec *ps)
 		if (diff_filter) {
 			struct child_process filter_cp = CHILD_PROCESS_INIT;
 
-			setup_child_process(&filter_cp, s,
+			setup_child_process(s, &filter_cp,
 					    diff_filter, NULL);
 			filter_cp.git_cmd = 0;
 			filter_cp.use_shell = 1;
